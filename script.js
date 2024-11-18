@@ -98,12 +98,19 @@ var KnowledgeGraph = (function() {
         },
 
         setupEventListeners: function() {
+            // Namespace filter
+            document.getElementById('namespace-filter').addEventListener('change', (e) => {
+                this.currentNamespace = e.target.value;
+                this.updateVisibleNodes();
+            });
+
             // Back button
             document.getElementById('back-button').addEventListener('click', () => {
-                if (this.currentNamespace) {
-                    const parts = this.currentNamespace.split(':');
-                    parts.pop();
-                    this.showNamespace(parts.join(':'));
+                if (this.expandedNodes.size > 0) {
+                    const lastNode = Array.from(this.expandedNodes).pop();
+                    this.expandedNodes.delete(lastNode);
+                    this.updateVisibleNodes();
+                    document.getElementById('back-button').disabled = this.expandedNodes.size === 0;
                 }
             });
 
@@ -121,40 +128,98 @@ var KnowledgeGraph = (function() {
 
             // Search functionality
             const searchInput = document.getElementById('node-search');
-            
-            // Enable the search input
             searchInput.disabled = false;
-            
             searchInput.addEventListener('input', (e) => {
                 const searchTerm = e.target.value.toLowerCase();
-                
-                // Clear highlight if search is empty
-                if (!searchTerm) {
-                    this.node.classed('search-highlight', false)
-                        .style('opacity', 1);
-                    this.link.style('opacity', 1);
-                    return;
-                }
-
-                // Update node visibility and highlighting
-                this.node.each(d => {
-                    const matches = d.name.toLowerCase().includes(searchTerm) ||
-                                  d.id.toLowerCase().includes(searchTerm) ||
-                                  (d.tags && d.tags.some(tag => tag.toLowerCase().includes(searchTerm)));
-                    
-                    d.matched = matches;
-                });
-
-                // Update visual states
-                this.node
-                    .classed('search-highlight', d => d.matched)
-                    .style('opacity', d => d.matched ? 1 : 0.2);
-
-                // Update edge visibility based on connected nodes
-                this.link.style('opacity', d => 
-                    (d.source.matched || d.target.matched) ? 1 : 0.1
-                );
+                this.updateSearch(searchTerm);
             });
+        },
+
+        updateVisibleNodes: function() {
+            // Filter nodes based on namespace and expanded state
+            this.visibleNodes = this.allNodes.filter(node => {
+                if (this.currentNamespace) {
+                    return node.namespace === this.currentNamespace || 
+                           this.expandedNodes.has(node.id);
+                }
+                return true;
+            });
+
+            // Filter edges based on visible nodes
+            this.visibleLinks = this.allLinks.filter(link => 
+                this.visibleNodes.some(n => n.id === link.source.id || n.id === link.source) &&
+                this.visibleNodes.some(n => n.id === link.target.id || n.id === link.target)
+            );
+
+            // Update the visualization
+            this.updateVisualization();
+        },
+
+        updateVisualization: function() {
+            // Update nodes
+            this.node = this.container.selectAll("g.node")
+                .data(this.visibleNodes, d => d.id);
+
+            // Remove old nodes
+            this.node.exit().remove();
+
+            // Add new nodes
+            const nodeEnter = this.node.enter()
+                .append("g")
+                .attr("class", "node")
+                .call(d3.drag()
+                    .on("start", (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    })
+                    .on("drag", (event, d) => {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    })
+                    .on("end", (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    }))
+                .on("click", (event, d) => this.handleNodeClick(event, d));
+
+            // Add node visuals
+            nodeEnter.append("circle")
+                .attr("r", d => this.getNodeRadius(d))
+                .attr("fill", d => this.getNodeColor(d));
+
+            nodeEnter.append("text")
+                .attr("dy", ".35em")
+                .text(d => d.name);
+
+            // Update links
+            this.link = this.container.selectAll("line.edge")
+                .data(this.visibleLinks, d => d.source.id + "-" + d.target.id);
+
+            // Remove old links
+            this.link.exit().remove();
+
+            // Add new links
+            this.link.enter()
+                .append("line")
+                .attr("class", d => `edge edge-${d.type}`)
+                .attr("marker-end", d => `url(#arrow-${d.type})`)
+                .attr("stroke-width", d => Math.sqrt(d.weight || 1));
+
+            // Update simulation
+            this.updateLayout(document.getElementById('layout-type').value);
+            this.updateEdgeVisibility();
+        },
+
+        updateEdgeVisibility: function() {
+            const activeTypes = Array.from(document.querySelectorAll('.edge-filter:checked'))
+                .map(cb => cb.value);
+            
+            this.container.selectAll("line.edge")
+                .style("display", d => 
+                    activeTypes.includes(d.type) ? 'block' : 'none'
+                );
         },
 
         resetView: function() {
@@ -216,7 +281,7 @@ var KnowledgeGraph = (function() {
                 
                 this.allLinks = data.edges;
                 this.setupNamespaceFilter(data.namespaces);
-                this.showNamespace("");  // Show top-level nodes initially
+                this.updateVisibleNodes();
             })
             .catch(error => console.error('Error loading graph data:', error));
         },
@@ -375,7 +440,7 @@ var KnowledgeGraph = (function() {
                 this.expandedNodes.add(d.id);
             }
             
-            this.showNamespace(this.currentNamespace);
+            this.updateVisibleNodes();
         },
 
         showNodePreview: function(event, d) {
@@ -426,17 +491,9 @@ var KnowledgeGraph = (function() {
             });
 
             select.addEventListener('change', (e) => {
-                this.showNamespace(e.target.value);
+                this.currentNamespace = e.target.value;
+                this.updateVisibleNodes();
             });
-        },
-
-        updateEdgeVisibility: function() {
-            const activeTypes = Array.from(document.querySelectorAll('.edge-filter:checked'))
-                .map(cb => cb.value);
-            
-            this.link.style('display', d => 
-                activeTypes.includes(d.type) ? 'block' : 'none'
-            );
         },
 
         updateLayout: function(layoutType) {
@@ -523,8 +580,9 @@ var KnowledgeGraph = (function() {
                         )
                         .force("charge", d3.forceManyBody().strength(-200))
                         .force("center", d3.forceCenter(this.width / 2, this.height / 2))
-                        .force("x", d3.forceX(this.width / 2).strength(0.1))
-                        .force("y", d3.forceY(this.height / 2).strength(0.1));
+                        .force("x", d3.forceX(this.width / 2).strength(0.1))  // Increased gravity
+                        .force("y", d3.forceY(this.height / 2).strength(0.1))  // Increased gravity
+                        .force("cluster", null);
                     
                     // Clear any fixed positions
                     this.visibleNodes.forEach(node => {
@@ -562,6 +620,39 @@ var KnowledgeGraph = (function() {
                     }
                 });
             };
+        },
+
+        getNodeRadius: function(d) {
+            return this.hasChildren(d) ? 12 : 8;
+        },
+
+        getNodeColor: function(d) {
+            return this.getNamespaceColor(d.id);
+        },
+
+        updateSearch: function(searchTerm) {
+            if (!searchTerm) {
+                this.node.classed('search-highlight', false)
+                    .style('opacity', 1);
+                this.link.style('opacity', 1);
+                return;
+            }
+
+            this.node.each(d => {
+                const matches = d.name.toLowerCase().includes(searchTerm) ||
+                              d.id.toLowerCase().includes(searchTerm) ||
+                              (d.tags && d.tags.some(tag => tag.toLowerCase().includes(searchTerm)));
+                
+                d.matched = matches;
+            });
+
+            this.node
+                .classed('search-highlight', d => d.matched)
+                .style('opacity', d => d.matched ? 1 : 0.2);
+
+            this.link.style('opacity', d => 
+                (d.source.matched || d.target.matched) ? 1 : 0.1
+            );
         }
     };
 
