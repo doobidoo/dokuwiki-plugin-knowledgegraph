@@ -5,6 +5,7 @@ var KnowledgeGraph = (function() {
         link: null,
         node: null,
         zoom: null,
+        container: null,
         width: 0,
         height: 0,
         initialized: false,
@@ -27,15 +28,28 @@ var KnowledgeGraph = (function() {
                         <option value="">All Namespaces</option>
                     </select>
                     <button id="back-button" class="graph-control" disabled>↩ Back</button>
+                    <button id="reset-view" class="graph-control">Reset View</button>
                     <div class="graph-legend">
-                        <span class="legend-item"><span class="legend-color hierarchy"></span>Hierarchy</span>
-                        <span class="legend-item"><span class="legend-color namespace"></span>Namespace</span>
-                        <span class="legend-item"><span class="legend-color reference"></span>Reference</span>
-                        <span class="legend-item"><span class="legend-color tag"></span>Tag</span>
+                        <label class="legend-item">
+                            <input type="checkbox" class="edge-filter" value="hierarchy" checked>
+                            <span class="legend-color hierarchy"></span>Hierarchy
+                        </label>
+                        <label class="legend-item">
+                            <input type="checkbox" class="edge-filter" value="namespace" checked>
+                            <span class="legend-color namespace"></span>Namespace
+                        </label>
+                        <label class="legend-item">
+                            <input type="checkbox" class="edge-filter" value="reference" checked>
+                            <span class="legend-color reference"></span>Reference
+                        </label>
+                        <label class="legend-item">
+                            <input type="checkbox" class="edge-filter" value="tag" checked>
+                            <span class="legend-color tag"></span>Tag
+                        </label>
                     </div>
                 </div>
                 <div class="graph-search">
-                    <input type="text" id="node-search" placeholder="Search pages..." class="graph-control">
+                    <input type="text" id="node-search" placeholder="Search pages..." class="graph-control" disabled>
                 </div>
                 <div id="graph-svg-container"></div>
                 <div id="node-preview" class="node-preview"></div>
@@ -51,15 +65,18 @@ var KnowledgeGraph = (function() {
                     .attr("width", this.width)
                     .attr("height", this.height);
 
-                // Add zoom behavior
+                // Add zoom behavior with proper transform
                 this.zoom = d3.zoom()
                     .scaleExtent([0.1, 4])
                     .on("zoom", (event) => {
-                        this.svg.select("g").attr("transform", event.transform);
+                        // Apply zoom transform to a container group that holds both nodes and links
+                        this.container.attr("transform", event.transform);
                     });
 
                 this.svg.call(this.zoom);
-                this.svg = this.svg.append("g");
+                
+                // Create a container group for both nodes and links
+                this.container = this.svg.append("g");
 
                 // Setup event listeners
                 this.setupEventListeners();
@@ -79,11 +96,80 @@ var KnowledgeGraph = (function() {
                 }
             });
 
-            // Search functionality
-            document.getElementById('node-search').addEventListener('input', (e) => {
-                const searchTerm = e.target.value.toLowerCase();
-                this.highlightNodes(searchTerm);
+            // Reset view button
+            document.getElementById('reset-view').addEventListener('click', () => {
+                this.resetView();
             });
+
+            // Edge type filters
+            document.querySelectorAll('.edge-filter').forEach(checkbox => {
+                checkbox.addEventListener('change', () => {
+                    this.updateEdgeVisibility();
+                });
+            });
+
+            // Search functionality
+            const searchInput = document.getElementById('node-search');
+            
+            // Enable the search input
+            searchInput.disabled = false;
+            
+            searchInput.addEventListener('input', (e) => {
+                const searchTerm = e.target.value.toLowerCase();
+                
+                // Clear highlight if search is empty
+                if (!searchTerm) {
+                    this.node.classed('search-highlight', false)
+                        .style('opacity', 1);
+                    this.link.style('opacity', 1);
+                    return;
+                }
+
+                // Update node visibility and highlighting
+                this.node.each(d => {
+                    const matches = d.name.toLowerCase().includes(searchTerm) ||
+                                  d.id.toLowerCase().includes(searchTerm) ||
+                                  (d.tags && d.tags.some(tag => tag.toLowerCase().includes(searchTerm)));
+                    
+                    d.matched = matches;
+                });
+
+                // Update visual states
+                this.node
+                    .classed('search-highlight', d => d.matched)
+                    .style('opacity', d => d.matched ? 1 : 0.2);
+
+                // Update edge visibility based on connected nodes
+                this.link.style('opacity', d => 
+                    (d.source.matched || d.target.matched) ? 1 : 0.1
+                );
+            });
+        },
+
+        resetView: function() {
+            if (!this.svg || !this.zoom) return;
+            
+            // Calculate the bounds of the graph
+            const bounds = this.container.node().getBBox();
+            const parent = this.svg.node().parentElement;
+            const fullWidth = parent.clientWidth;
+            const fullHeight = parent.clientHeight;
+            
+            const midX = bounds.x + bounds.width / 2;
+            const midY = bounds.y + bounds.height / 2;
+            
+            // Calculate the scale to fit the graph
+            const scale = 0.9 / Math.max(bounds.width / fullWidth, bounds.height / fullHeight);
+            
+            // Calculate the transform to center and scale the graph
+            const transform = d3.zoomIdentity
+                .translate(fullWidth / 2 - midX * scale, fullHeight / 2 - midY * scale)
+                .scale(scale);
+            
+            // Apply the transform with a smooth transition
+            this.svg.transition()
+                .duration(750)
+                .call(this.zoom.transform, transform);
         },
 
         highlightNodes: function(searchTerm) {
@@ -153,7 +239,7 @@ var KnowledgeGraph = (function() {
 
         renderGraph: function() {
             // Clear existing graph
-            this.svg.selectAll("*").remove();
+            this.container.selectAll("*").remove();
 
             // Add arrow markers for different edge types
             const defs = this.svg.append("defs");
@@ -172,27 +258,10 @@ var KnowledgeGraph = (function() {
             });
 
             // Set up forces
-            this.simulation = d3.forceSimulation(this.visibleNodes)
-                .force("link", d3.forceLink(this.visibleLinks)
-                    .id(d => d.id)
-                    .distance(d => {
-                        switch(d.type) {
-                            case 'hierarchy': return 80;
-                            case 'namespace': return 100;
-                            case 'reference': return 150;
-                            case 'tag': return 200;
-                            default: return 100;
-                        }
-                    }))
-                .force("charge", d3.forceManyBody()
-                    .strength(d => this.hasChildren(d) ? -1000 : -500))
-                .force("center", d3.forceCenter(this.width / 2, this.height / 2))
-                .force("collide", d3.forceCollide()
-                    .radius(d => this.hasChildren(d) ? 50 : 30)
-                    .strength(0.7));
+            this.updateSimulation();
 
             // Create links with different styles per type
-            this.link = this.svg.append("g")
+            this.link = this.container.append("g")
                 .selectAll("line")
                 .data(this.visibleLinks)
                 .enter().append("line")
@@ -200,16 +269,27 @@ var KnowledgeGraph = (function() {
                 .attr("marker-end", d => `url(#arrow-${d.type})`)
                 .attr("stroke-width", d => Math.sqrt(d.weight || 1));
 
-            // Create node groups
-            this.node = this.svg.append("g")
-                .selectAll("g")
+            // Create node groups with proper drag behavior
+            this.node = this.container.selectAll("g")
                 .data(this.visibleNodes)
                 .enter().append("g")
                 .attr("class", "node")
                 .call(d3.drag()
-                    .on("start", this.dragstarted.bind(this))
-                    .on("drag", this.dragged.bind(this))
-                    .on("end", this.dragended.bind(this)));
+                    .on("start", (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0.3).restart();
+                        d.fx = d.x;
+                        d.fy = d.y;
+                    })
+                    .on("drag", (event, d) => {
+                        d.fx = event.x;
+                        d.fy = event.y;
+                    })
+                    .on("end", (event, d) => {
+                        if (!event.active) this.simulation.alphaTarget(0);
+                        d.fx = null;
+                        d.fy = null;
+                    })
+                );
 
             // Add circles for nodes
             this.node.append("circle")
@@ -239,16 +319,40 @@ var KnowledgeGraph = (function() {
                 .style("font-size", "16px")
                 .style("font-weight", "bold");
 
-            // Update simulation
-            this.simulation.on("tick", () => {
-                this.link
-                    .attr("x1", d => d.source.x)
-                    .attr("y1", d => d.source.y)
-                    .attr("x2", d => d.target.x)
-                    .attr("y2", d => d.target.y);
+            // Add tooltips with full path
+            this.node.append("title")
+                .text(d => d.path);
+        },
 
-                this.node.attr("transform", d => `translate(${d.x},${d.y})`);
-            });
+        updateSimulation: function() {
+            if (!this.simulation) {
+                this.simulation = d3.forceSimulation()
+                    .force("link", d3.forceLink()
+                        .id(d => d.id)
+                        .distance(d => 100 / (d.weight || 1))
+                    )
+                    .force("charge", d3.forceManyBody()
+                        .strength(-200)  // Increased repulsion
+                    )
+                    .force("center", d3.forceCenter(this.width / 2, this.height / 2))
+                    .force("x", d3.forceX(this.width / 2).strength(0.1))  // Increased gravity
+                    .force("y", d3.forceY(this.height / 2).strength(0.1))  // Increased gravity
+                    .on("tick", () => this.tick());
+            }
+
+            this.simulation.nodes(this.visibleNodes);
+            this.simulation.force("link").links(this.visibleLinks);
+            this.simulation.alpha(1).restart();
+        },
+
+        tick: function() {
+            this.link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            this.node.attr("transform", d => `translate(${d.x},${d.y})`);
         },
 
         handleNodeClick: function(event, d) {
@@ -315,21 +419,13 @@ var KnowledgeGraph = (function() {
             });
         },
 
-        dragstarted: function(event) {
-            if (!event.active) this.simulation.alphaTarget(0.3).restart();
-            event.subject.fx = event.subject.x;
-            event.subject.fy = event.subject.y;
-        },
-
-        dragged: function(event) {
-            event.subject.fx = event.x;
-            event.subject.fy = event.y;
-        },
-
-        dragended: function(event) {
-            if (!event.active) this.simulation.alphaTarget(0);
-            event.subject.fx = null;
-            event.subject.fy = null;
+        updateEdgeVisibility: function() {
+            const activeTypes = Array.from(document.querySelectorAll('.edge-filter:checked'))
+                .map(cb => cb.value);
+            
+            this.link.style('display', d => 
+                activeTypes.includes(d.type) ? 'block' : 'none'
+            );
         }
     };
 

@@ -29,6 +29,7 @@
     align-items: center;
     gap: 10px;
     background: #f5f5f5;
+    flex-wrap: wrap;
 }
 
 .graph-control {
@@ -36,6 +37,23 @@
     border: 1px solid #ccc;
     border-radius: 4px;
     font-size: 14px;
+    background: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button.graph-control {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+}
+
+button.graph-control:hover {
+    background: #e9ecef;
+}
+
+button.graph-control:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .graph-search {
@@ -47,25 +65,60 @@
 #node-search {
     width: 100%;
     box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background: white;
+}
+
+#node-search:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+#node-search:disabled {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
 }
 
 .graph-legend {
     margin-left: auto;
     display: flex;
     gap: 15px;
+    flex-wrap: wrap;
 }
 
 .legend-item {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: 5px;
     font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    padding: 2px 5px;
+    border-radius: 3px;
+    transition: background-color 0.2s ease;
+}
+
+.legend-item:hover {
+    background-color: rgba(0,0,0,0.05);
+}
+
+.legend-item input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
 }
 
 .legend-color {
+    display: inline-block;
     width: 20px;
     height: 3px;
     border-radius: 1px;
+    transition: opacity 0.2s ease;
+    vertical-align: middle;
+    margin: 0 5px;
 }
 
 .knowledge-graph .controls {
@@ -81,11 +134,13 @@
 
 .knowledge-graph .node {
     cursor: pointer;
+    transition: opacity 0.2s ease;
 }
 
 .knowledge-graph .node circle {
     stroke: #fff;
     stroke-width: 1.5px;
+    transition: all 0.2s ease;
 }
 
 .knowledge-graph .node text {
@@ -110,6 +165,7 @@
 /* Edge styles */
 .edge {
     fill: none;
+    transition: opacity 0.2s ease;
 }
 
 .edge-hierarchy {
@@ -138,6 +194,7 @@
 .node circle {
     stroke: #fff;
     stroke-width: 2px;
+    transition: all 0.2s ease;
 }
 
 .node text {
@@ -153,6 +210,7 @@
 .node.search-highlight circle {
     stroke: #f1c40f;
     stroke-width: 3px;
+    filter: drop-shadow(0 0 3px rgba(241, 196, 15, 0.5));
 }
 
 /* Node preview */

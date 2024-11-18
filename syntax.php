@@ -31,13 +31,18 @@ class syntax_plugin_knowledgegraph extends DokuWiki_Syntax_Plugin {
 
         // Add wrapper with explicit size
         $renderer->doc .= '<div class="knowledge-graph">';
-        $renderer->doc .= '<div class="controls">';
-        $renderer->doc .= '<select id="namespace-filter" onchange="KnowledgeGraph.showNamespace(this.value)">';
-        $renderer->doc .= '<option value="">Show All Namespaces</option>';
-        $renderer->doc .= '</select>';
-        $renderer->doc .= '</div>';
         $renderer->doc .= '<div id="graph-container"></div>';
         $renderer->doc .= '</div>';
+        
+        // Add initialization script
+        $renderer->doc .= '<script>
+            document.addEventListener("DOMContentLoaded", function() {
+                if (typeof KnowledgeGraph !== "undefined") {
+                    KnowledgeGraph.init();
+                }
+            });
+        </script>';
+        
         return true;
     }
 }

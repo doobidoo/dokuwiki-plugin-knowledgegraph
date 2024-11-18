@@ -38,8 +38,11 @@ class helper_plugin_knowledgegraph_parser extends DokuWiki_Plugin {
             $path = $dir.'/'.$file;
             if(is_dir($path)) {
                 $newNamespace = trim($namespace.':'.$file, ':');
-                $this->namespaces[] = $newNamespace;
-                $this->scanPages($path, $newNamespace);
+                // Check namespace ACL
+                if($this->hasReadAccess($newNamespace . ':*')) {
+                    $this->namespaces[] = $newNamespace;
+                    $this->scanPages($path, $newNamespace);
+                }
             } elseif(substr($file, -4) === '.txt') {
                 $this->parsePage($path, $namespace);
             }
@@ -47,14 +50,27 @@ class helper_plugin_knowledgegraph_parser extends DokuWiki_Plugin {
     }
 
     private function parsePage($path, $namespace) {
-        $content = file_get_contents($path);
         $pageName = basename($path, '.txt');
         $fullName = $namespace ? $namespace.':'.$pageName : $pageName;
+
+        // Check ACL for this page
+        if (!$this->hasReadAccess($fullName)) {
+            return;
+        }
+
+        $content = file_get_contents($path);
+        
+        // Extract H1 title
+        $title = $pageName;
+        if (preg_match('/^=\s*([^=]+?)\s*=/', $content, $matches)) {
+            $title = trim($matches[1]);
+        }
         
         // Add node
         $this->nodes[$fullName] = array(
             'id' => $fullName,
-            'name' => $pageName,
+            'name' => $title,
+            'path' => $fullName,  // Keep the full path for tooltip
             'namespace' => $namespace,
             'weight' => 1,
             'tags' => []
@@ -71,36 +87,34 @@ class helper_plugin_knowledgegraph_parser extends DokuWiki_Plugin {
             }
         }
 
-        // Extract internal wiki links using DokuWiki's link pattern
+        // Extract internal wiki links
         if (preg_match_all('/\[\[(.+?)\]\]/', $content, $matches)) {
             foreach($matches[1] as $match) {
-                // Clean up the link
-                $link = explode('|', $match)[0];  // Remove any display text
-                $link = explode('#', $link)[0];   // Remove any section anchors
-                $link = trim($link);              // Remove whitespace
+                $link = explode('|', $match)[0];
+                $link = explode('#', $link)[0];
+                $link = trim($link);
                 
-                // Skip external links and empty links
                 if (empty($link) || preg_match('/^(https?|ftp):\/\//i', $link)) {
                     continue;
                 }
                 
-                // Resolve the link to a full page ID
                 $resolvedId = $this->resolveWikiID($link, $namespace);
                 
-                // Determine edge type
-                $edgeType = $this->determineEdgeType($fullName, $resolvedId);
-                
-                // Add edge
-                $edgeKey = "$fullName->$resolvedId";
-                if(!isset($this->edges[$edgeKey])) {
-                    $this->edges[$edgeKey] = array(
-                        'source' => $fullName,
-                        'target' => $resolvedId,
-                        'weight' => 1,
-                        'type' => $edgeType
-                    );
-                } else {
-                    $this->edges[$edgeKey]['weight']++;
+                // Only add edge if target page is accessible
+                if ($this->hasReadAccess($resolvedId)) {
+                    $edgeType = $this->determineEdgeType($fullName, $resolvedId);
+                    
+                    $edgeKey = "$fullName->$resolvedId";
+                    if(!isset($this->edges[$edgeKey])) {
+                        $this->edges[$edgeKey] = array(
+                            'source' => $fullName,
+                            'target' => $resolvedId,
+                            'weight' => 1,
+                            'type' => $edgeType
+                        );
+                    } else {
+                        $this->edges[$edgeKey]['weight']++;
+                    }
                 }
             }
         }
@@ -109,6 +123,8 @@ class helper_plugin_knowledgegraph_parser extends DokuWiki_Plugin {
         if (!empty($this->nodes[$fullName]['tags'])) {
             foreach ($this->nodes as $otherId => $otherNode) {
                 if ($otherId === $fullName) continue;
+                if (!$this->hasReadAccess($otherId)) continue;
+                
                 $commonTags = array_intersect($this->nodes[$fullName]['tags'], $otherNode['tags']);
                 if (!empty($commonTags)) {
                     $edgeKey = "$fullName->$otherId";
@@ -123,6 +139,20 @@ class helper_plugin_knowledgegraph_parser extends DokuWiki_Plugin {
                 }
             }
         }
+    }
+
+    private function hasReadAccess($id) {
+        global $auth;
+        global $USERINFO;
+        
+        // Get current user groups
+        $groups = array();
+        if (isset($USERINFO['grps'])) {
+            $groups = $USERINFO['grps'];
+        }
+        
+        // Check ACL
+        return auth_quickaclcheck($id) >= AUTH_READ;
     }
 
     private function determineEdgeType($sourceId, $targetId) {
