@@ -1,0 +1,7 @@
+base   knowledgegraph
+author Your Name
+email  your@email.com
+date   2024-11-17
+name   Knowledge Graph Plugin
+desc   Interactive visualization of wiki page relationships
+url    https://www.dokuwiki.org/plugin:knowledgegraph
