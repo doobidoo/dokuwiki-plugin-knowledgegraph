@@ -24,6 +24,12 @@ var KnowledgeGraph = (function() {
             const container = document.getElementById('graph-container');
             container.innerHTML = `
                 <div class="graph-controls">
+                    <select id="layout-type" class="graph-control">
+                        <option value="force">Force-Directed</option>
+                        <option value="disjoint">Disjoint Force-Directed</option>
+                        <option value="radial">Radial</option>
+                        <option value="hierarchical">Hierarchical</option>
+                    </select>
                     <select id="namespace-filter" class="graph-control">
                         <option value="">All Namespaces</option>
                     </select>
@@ -84,6 +90,11 @@ var KnowledgeGraph = (function() {
             } catch (error) {
                 console.error('Error initializing graph:', error);
             }
+
+            // Add layout type change handler
+            document.getElementById('layout-type').addEventListener('change', (e) => {
+                this.updateLayout(e.target.value);
+            });
         },
 
         setupEventListeners: function() {
@@ -426,6 +437,131 @@ var KnowledgeGraph = (function() {
             this.link.style('display', d => 
                 activeTypes.includes(d.type) ? 'block' : 'none'
             );
+        },
+
+        updateLayout: function(layoutType) {
+            if (!this.simulation) return;
+            
+            // Stop current simulation
+            this.simulation.stop();
+            
+            switch(layoutType) {
+                case 'disjoint':
+                    this.simulation
+                        .force("link", d3.forceLink()
+                            .id(d => d.id)
+                            .distance(d => 100 / (d.weight || 1))
+                            .strength(0.5)
+                        )
+                        .force("charge", d3.forceManyBody()
+                            .strength(-300)
+                        )
+                        .force("center", null)  // Remove center force
+                        .force("x", d3.forceX(this.width / 2).strength(0.1))
+                        .force("y", d3.forceY(this.height / 2).strength(0.1))
+                        .force("cluster", this.forceCluster());
+                    break;
+                    
+                case 'radial':
+                    this.simulation
+                        .force("link", d3.forceLink()
+                            .id(d => d.id)
+                            .distance(d => 100 / (d.weight || 1))
+                        )
+                        .force("charge", d3.forceManyBody().strength(-200))
+                        .force("center", null)
+                        .force("r", d3.forceRadial(
+                            d => d.depth * 100,
+                            this.width / 2,
+                            this.height / 2
+                        ).strength(1))
+                        .force("x", null)
+                        .force("y", null);
+                    break;
+                    
+                case 'hierarchical':
+                    // Create hierarchy based on namespaces
+                    const hierarchy = d3.stratify()
+                        .id(d => d.id)
+                        .parentId(d => {
+                            const parts = d.id.split(':');
+                            return parts.length > 1 ? parts.slice(0, -1).join(':') : null;
+                        })(this.visibleNodes);
+                        
+                    const treeLayout = d3.tree()
+                        .size([this.width - 100, this.height - 100]);
+                        
+                    const nodes = treeLayout(hierarchy);
+                    
+                    // Update node positions based on tree layout
+                    this.visibleNodes.forEach(node => {
+                        const treeNode = nodes.find(n => n.id === node.id);
+                        if (treeNode) {
+                            node.x = treeNode.x + 50;
+                            node.y = treeNode.y + 50;
+                            node.fx = node.x;
+                            node.fy = node.y;
+                        }
+                    });
+                    
+                    this.simulation
+                        .force("link", d3.forceLink()
+                            .id(d => d.id)
+                            .distance(50)
+                        )
+                        .force("charge", null)
+                        .force("center", null)
+                        .force("x", null)
+                        .force("y", null);
+                    break;
+                    
+                default: // force-directed
+                    this.simulation
+                        .force("link", d3.forceLink()
+                            .id(d => d.id)
+                            .distance(d => 100 / (d.weight || 1))
+                        )
+                        .force("charge", d3.forceManyBody().strength(-200))
+                        .force("center", d3.forceCenter(this.width / 2, this.height / 2))
+                        .force("x", d3.forceX(this.width / 2).strength(0.1))
+                        .force("y", d3.forceY(this.height / 2).strength(0.1));
+                    
+                    // Clear any fixed positions
+                    this.visibleNodes.forEach(node => {
+                        delete node.fx;
+                        delete node.fy;
+                    });
+                    break;
+            }
+            
+            // Restart simulation
+            this.simulation.alpha(1).restart();
+        },
+
+        forceCluster: function() {
+            const nodes = this.visibleNodes;
+            const namespaces = [...new Set(nodes.map(d => d.namespace))];
+            const centers = {};
+            
+            // Assign cluster centers
+            namespaces.forEach((ns, i) => {
+                const angle = (2 * Math.PI * i) / namespaces.length;
+                const radius = Math.min(this.width, this.height) / 4;
+                centers[ns] = {
+                    x: this.width/2 + radius * Math.cos(angle),
+                    y: this.height/2 + radius * Math.sin(angle)
+                };
+            });
+            
+            return function(alpha) {
+                nodes.forEach(d => {
+                    const center = centers[d.namespace] || centers[''];
+                    if (center) {
+                        d.vx += (center.x - d.x) * alpha * 0.5;
+                        d.vy += (center.y - d.y) * alpha * 0.5;
+                    }
+                });
+            };
         }
     };
 

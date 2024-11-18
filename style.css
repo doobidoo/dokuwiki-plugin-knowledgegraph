@@ -23,23 +23,28 @@
 }
 
 .graph-controls {
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
     display: flex;
-    align-items: center;
-    gap: 10px;
-    background: #f5f5f5;
     flex-wrap: wrap;
+    gap: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
 }
 
 .graph-control {
     padding: 5px 10px;
-    border: 1px solid #ccc;
+    border: 1px solid #ced4da;
     border-radius: 4px;
-    font-size: 14px;
     background: white;
+    font-size: 14px;
+}
+
+select.graph-control {
     cursor: pointer;
-    transition: all 0.2s ease;
+}
+
+select.graph-control:hover {
+    border-color: #adb5bd;
 }
 
 button.graph-control {
@@ -119,6 +124,11 @@ button.graph-control:disabled {
     transition: opacity 0.2s ease;
     vertical-align: middle;
     margin: 0 5px;
+}
+
+#layout-type {
+    min-width: 150px;
+    margin-right: 10px;
 }
 
 .knowledge-graph .controls {
@@ -235,6 +245,19 @@ button.graph-control:disabled {
     margin: 5px 0;
     font-size: 14px;
     color: #666;
+}
+
+/* Layout-specific styles */
+.layout-hierarchical .edge {
+    stroke-dasharray: 5,5;
+}
+
+.layout-radial .node circle {
+    stroke-width: 2px;
+}
+
+.layout-disjoint .node {
+    transition: transform 0.3s ease;
 }
 
 /* Responsive adjustments */
